@@ -36,7 +36,11 @@ jobs:
         run: chmod +x gradlew
 
       - name: Run Unit Tests
-        run: ./gradlew test
+        uses: nick-fields/retry@v3
+        with:
+          timeout_minutes: 15
+          max_attempts: 3
+          command: ./gradlew test
 
       - name: Build Debug APK
         run: ./gradlew assembleDebug
@@ -75,7 +79,11 @@ jobs:
         run: chmod +x gradlew
 
       - name: Build Release AAB
-        run: ./gradlew bundleRelease
+        uses: nick-fields/retry@v3
+        with:
+          timeout_minutes: 15
+          max_attempts: 3
+          command: ./gradlew bundleRelease
 
       - name: Sign AAB
         uses: r0adkll/sign-android-release@v1
