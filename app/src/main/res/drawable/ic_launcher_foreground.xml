@@ -1,0 +1,48 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <!-- Open book -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M18,86 C18,86 33,64 54,64 C75,64 90,86 90,86 L85,89 C85,89 71,70 54,70 C37,70 23,89 23,89 Z" />
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="#6750A4"
+        android:strokeWidth="1.6"
+        android:pathData="M54,64 L54,89" />
+
+    <!-- Cricket bat -->
+    <group
+        android:name="bat"
+        android:pivotX="54"
+        android:pivotY="54"
+        android:rotation="-32">
+        <path
+            android:fillColor="#D9A15C"
+            android:pathData="M50,18 L58,18 L58,36 L61,44 L61,76 Q61,81 56,81 L52,81 Q47,81 47,76 L47,44 L50,36 Z" />
+        <path
+            android:fillColor="#00000000"
+            android:strokeColor="#8A5A2B"
+            android:strokeWidth="1.4"
+            android:pathData="M49,22 L58,22 M49,26 L58,26 M49,30 L58,30" />
+    </group>
+
+    <!-- Cricket ball -->
+    <path
+        android:fillColor="#B3261E"
+        android:pathData="M78,28 m-9,0 a9,9 0 1,1 18,0 a9,9 0 1,1 -18,0" />
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="#FFFFFF"
+        android:strokeWidth="1.4"
+        android:pathData="M70,22 Q78,28 70,34" />
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="#FFFFFF"
+        android:strokeWidth="1.4"
+        android:pathData="M86,22 Q78,28 86,34" />
+</vector>
