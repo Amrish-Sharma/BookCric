@@ -13,6 +13,11 @@
 .externalNativeBuild
 .cxx
 local.properties
+/.idea/**
+# Release signing — never commit the keystore or its credentials
+keystore.properties
+*.jks
+*.keystore
 
 # AI agent artifacts (plans, scratch state, tool config) — not part of the app
 .agent/
