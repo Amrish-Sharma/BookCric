@@ -2,6 +2,7 @@ package com.codebuzz.app.bookcric.ui
 
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
+import com.codebuzz.app.bookcric.game.BallResult
 import com.codebuzz.app.bookcric.game.GameLogic
 import com.codebuzz.app.bookcric.game.GameState
 import com.codebuzz.app.bookcric.game.MatchConfig
@@ -23,10 +24,12 @@ class GameViewModel(private val savedStateHandle: SavedStateHandle) : ViewModel(
         savedStateHandle[KEY_GAME_STATE] = GameLogic.startMatch(config)
     }
 
-    /** Flip the "book" to play one ball in the current innings. */
-    fun flip() {
-        val currentState = uiState.value ?: return
-        savedStateHandle[KEY_GAME_STATE] = GameLogic.playBall(currentState, rng)
+    /** Flip the "book" to play one ball in the current innings. Returns the resulting ball. */
+    fun flip(): BallResult? {
+        val currentState = uiState.value ?: return null
+        val updated = GameLogic.playBall(currentState, rng)
+        savedStateHandle[KEY_GAME_STATE] = updated
+        return updated.lastBall
     }
 
     /** Transition from the break into the second innings. */
