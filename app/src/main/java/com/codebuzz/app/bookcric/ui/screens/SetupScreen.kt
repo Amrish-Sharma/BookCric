@@ -25,6 +25,11 @@ fun SetupScreen(
     var player2Name by remember { mutableStateOf("") }
     var battingFirst by remember { mutableStateOf(Player.ONE) }
     var oversLimitOption by remember { mutableStateOf<Int?>(1) }
+    var vsComputer by remember { mutableStateOf(false) }
+
+    val defaultPlayerOneName = if (vsComputer) "You" else "Player 1"
+    val playerOneLabel = player1Name.ifBlank { defaultPlayerOneName }
+    val playerTwoLabel = if (vsComputer) MatchConfig.COMPUTER_NAME else player2Name.ifBlank { "Player 2" }
 
     Column(
         modifier = modifier
@@ -39,23 +44,37 @@ fun SetupScreen(
             color = MaterialTheme.colorScheme.primary
         )
 
+        SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
+            listOf(false to "vs Friend", true to "vs Computer").forEachIndexed { index, (computer, label) ->
+                SegmentedButton(
+                    selected = vsComputer == computer,
+                    onClick = { vsComputer = computer },
+                    shape = SegmentedButtonDefaults.itemShape(index = index, count = 2)
+                ) {
+                    Text(label)
+                }
+            }
+        }
+
         OutlinedTextField(
             value = player1Name,
             onValueChange = { player1Name = it },
-            label = { Text("Player 1 Name") },
-            placeholder = { Text("Player 1") },
+            label = { Text(if (vsComputer) "Your Name" else "Player 1 Name") },
+            placeholder = { Text(defaultPlayerOneName) },
             modifier = Modifier.fillMaxWidth(),
             singleLine = true
         )
 
-        OutlinedTextField(
-            value = player2Name,
-            onValueChange = { player2Name = it },
-            label = { Text("Player 2 Name") },
-            placeholder = { Text("Player 2") },
-            modifier = Modifier.fillMaxWidth(),
-            singleLine = true
-        )
+        if (!vsComputer) {
+            OutlinedTextField(
+                value = player2Name,
+                onValueChange = { player2Name = it },
+                label = { Text("Player 2 Name") },
+                placeholder = { Text("Player 2") },
+                modifier = Modifier.fillMaxWidth(),
+                singleLine = true
+            )
+        }
 
         Text(
             text = "Who bats first?",
@@ -68,12 +87,12 @@ fun SetupScreen(
             horizontalArrangement = Arrangement.spacedBy(16.dp)
         ) {
             PlayerRadioOption(
-                label = player1Name.ifBlank { "Player 1" },
+                label = playerOneLabel,
                 selected = battingFirst == Player.ONE,
                 onClick = { battingFirst = Player.ONE }
             )
             PlayerRadioOption(
-                label = player2Name.ifBlank { "Player 2" },
+                label = playerTwoLabel,
                 selected = battingFirst == Player.TWO,
                 onClick = { battingFirst = Player.TWO }
             )
@@ -105,10 +124,11 @@ fun SetupScreen(
             onClick = {
                 onStartMatch(
                     MatchConfig(
-                        playerOneName = player1Name.ifBlank { "Player 1" },
-                        playerTwoName = player2Name.ifBlank { "Player 2" },
+                        playerOneName = playerOneLabel,
+                        playerTwoName = playerTwoLabel,
                         battingFirst = battingFirst,
-                        oversLimit = oversLimitOption
+                        oversLimit = oversLimitOption,
+                        vsComputer = vsComputer
                     )
                 )
             },

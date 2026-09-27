@@ -21,6 +21,7 @@ enum class Phase { SETUP, INNINGS_1, INNINGS_BREAK, INNINGS_2, RESULT }
  * @param battingFirst set by the players after their own real-world coin toss.
  * @param bookPages length of the "book". Kept even (default 400) so the even-page outcomes
  *   {0, 2, 4, 6, 8} come up exactly uniformly.
+ * @param vsComputer when true, [Player.TWO] is the computer and bats automatically.
  */
 @Serializable
 @Parcelize
@@ -29,8 +30,15 @@ data class MatchConfig(
     val playerTwoName: String,
     val battingFirst: Player,
     val oversLimit: Int?,          // null == unlimited
-    val bookPages: Int = 400
-) : Parcelable
+    val bookPages: Int = 400,
+    val vsComputer: Boolean = false
+) : Parcelable {
+    fun isComputer(player: Player): Boolean = vsComputer && player == Player.TWO
+
+    companion object {
+        const val COMPUTER_NAME = "Computer"
+    }
+}
 
 /** Outcome of one flip. [runs] is 0 when [isOut]; [page] is always even (odd pages are reflipped). */
 @Serializable
@@ -113,8 +121,14 @@ object GameLogic {
      * Play one ball. Only valid in [Phase.INNINGS_1] or [Phase.INNINGS_2]; a no-op otherwise.
      * Handles run/out resolution, the single-wicket rule, the overs cap, and the chase win-on-target.
      */
-    fun playBall(state: GameState, rng: Random): GameState {
-        val ball = flip(rng, state.config.bookPages)
+    fun playBall(state: GameState, rng: Random): GameState =
+        applyBall(state, flip(rng, state.config.bookPages))
+
+    /**
+     * Apply an already-drawn [ball] to the current innings. Lets the UI draw the ball first,
+     * animate the page turn, and only commit the result once the page has landed.
+     */
+    fun applyBall(state: GameState, ball: BallResult): GameState {
         return when (state.phase) {
             Phase.INNINGS_1 -> {
                 val updated = state.innings1.copy(
@@ -147,6 +161,13 @@ object GameLogic {
             }
             else -> state
         }
+    }
+
+    /** True when the computer is at the crease and should flip on its own. */
+    fun isComputerTurn(state: GameState): Boolean = when (state.phase) {
+        Phase.INNINGS_1 -> state.config.isComputer(state.innings1.batter)
+        Phase.INNINGS_2 -> state.config.isComputer(state.innings2.batter)
+        else -> false
     }
 
     /** Move from the innings break into the chase. */

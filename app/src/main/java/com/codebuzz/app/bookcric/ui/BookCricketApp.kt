@@ -42,7 +42,8 @@ fun BookCricketApp(
                     Phase.INNINGS_1, Phase.INNINGS_2 -> {
                         GameScreen(
                             state = state,
-                            onFlip = { viewModel.flip() },
+                            onDrawBall = { viewModel.drawBall() },
+                            onCommitBall = { viewModel.commitBall(it) },
                             modifier = modifier
                         )
                     }

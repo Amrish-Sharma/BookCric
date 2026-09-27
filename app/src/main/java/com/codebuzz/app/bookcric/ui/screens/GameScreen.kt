@@ -1,7 +1,6 @@
 package com.codebuzz.app.bookcric.ui.screens
 
 import androidx.compose.animation.core.*
-import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -10,47 +9,59 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import com.codebuzz.app.bookcric.game.*
+import com.codebuzz.app.bookcric.ui.components.FlipBook
+import com.codebuzz.app.bookcric.ui.components.PageFace
+import com.codebuzz.app.bookcric.ui.components.rememberBookState
 import com.codebuzz.app.bookcric.ui.theme.BookCricketTheme
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlin.random.Random
+
+/** Pause before the computer flips, so its turn reads as a deliberate action. */
+private const val COMPUTER_THINK_MILLIS = 900L
+
+/** How long the landing page stays on screen before an innings-ending ball moves the match on. */
+private const val INNINGS_END_HOLD_MILLIS = 1400L
 
 @Composable
 fun GameScreen(
     state: GameState,
-    onFlip: () -> BallResult?,
+    onDrawBall: () -> BallResult?,
+    onCommitBall: (BallResult) -> Unit,
     modifier: Modifier = Modifier
 ) {
     val currentInnings = if (state.phase == Phase.INNINGS_1) state.innings1 else state.innings2
     val batterName = if (currentInnings.batter == Player.ONE) state.config.playerOneName else state.config.playerTwoName
-    
+    val computerBatting = GameLogic.isComputerTurn(state)
+
     val overs = currentInnings.ballsBowled / 6
     val balls = currentInnings.ballsBowled % 6
     val oversText = "$overs.$balls overs"
 
     // Animation States
     var isAnimating by remember { mutableStateOf(false) }
-    var riffleBall by remember { mutableStateOf<BallResult?>(null) }
+    var shownBall by remember { mutableStateOf(state.lastBall) }
+    val latestState by rememberUpdatedState(state)
     val haptic = LocalHapticFeedback.current
     val scope = rememberCoroutineScope()
-    
+
     val resultScale = remember { Animatable(1f) }
     val resultShake = remember { Animatable(0f) }
-    val pageRotation = remember { Animatable(0f) }
+    val book = rememberBookState {
+        state.lastBall?.let { PageFace(it.page, highlight = true, isOut = it.isOut) }
+            ?: PageFace(GameLogic.drawEvenPage(Random, state.config.bookPages))
+    }
 
-    val displayedBall = if (isAnimating) riffleBall else state.lastBall
-
-    LaunchedEffect(state.lastBall) {
-        state.lastBall?.let { ball ->
+    LaunchedEffect(shownBall) {
+        shownBall?.let { ball ->
             // Trigger animations when the result settles
             if (ball.isOut) {
                 haptic.performHapticFeedback(HapticFeedbackType.LongPress)
@@ -77,33 +88,44 @@ fun GameScreen(
         }
     }
 
-    val handleFlip = {
-        scope.launch {
-            isAnimating = true
-
-            // Riffle through a handful of decoy pages first. Each turn takes a
-            // little longer than the last, like a real stack of pages losing
-            // momentum as you let them go, before settling on the real result.
-            val decoyTurns = 6
-            repeat(decoyTurns) { i ->
-                val turnDuration = (90 + i * 26).coerceAtMost(210)
+    // Riffle through the book, land on the drawn page, then commit the ball.
+    suspend fun playTurn() {
+        if (isAnimating) return
+        val ball = onDrawBall() ?: return
+        isAnimating = true
+        try {
+            // Thumb forward through a few pages. Sheets overlap in flight, and each one is let
+            // go a little later and falls a little slower, like a stack losing momentum.
+            val decoyPages = List(6) { GameLogic.drawEvenPage(Random, latestState.config.bookPages) }.sorted()
+            coroutineScope {
+                decoyPages.forEachIndexed { i, page ->
+                    launch { book.turnTo(PageFace(page), durationMillis = 380 + i * 45) }
+                    haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                    delay(70L + i * 20L)
+                }
+                delay(90)
                 haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                pageRotation.animateTo(90f, tween(turnDuration, easing = FastOutSlowInEasing))
-                riffleBall = GameLogic.flip(Random, state.config.bookPages)
-                pageRotation.snapTo(-90f)
-                pageRotation.animateTo(0f, tween(turnDuration, easing = FastOutSlowInEasing))
+                book.turnTo(PageFace(ball.page, highlight = true, isOut = ball.isOut), durationMillis = 720)
             }
+            shownBall = ball
 
-            // Final, slowest turn lands on the actual outcome.
-            haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-            pageRotation.animateTo(90f, tween(280, easing = FastOutSlowInEasing))
-            riffleBall = onFlip()
-            pageRotation.snapTo(-90f)
-            pageRotation.animateTo(0f, tween(320, easing = FastOutSlowInEasing))
-
+            // Let an innings-ending ball sink in before the screen moves on.
+            val current = latestState
+            if (GameLogic.applyBall(current, ball).phase != current.phase) {
+                delay(INNINGS_END_HOLD_MILLIS)
+            }
+            onCommitBall(ball)
+        } finally {
             isAnimating = false
         }
-        Unit
+    }
+
+    // The computer flips on its own, once per ball.
+    LaunchedEffect(computerBatting, currentInnings.ballsBowled) {
+        if (computerBatting) {
+            delay(COMPUTER_THINK_MILLIS)
+            playTurn()
+        }
     }
 
     Column(
@@ -121,7 +143,9 @@ fun GameScreen(
             )
         ) {
             Column(
-                modifier = Modifier.padding(16.dp),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(16.dp),
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
                 Text(
@@ -139,7 +163,7 @@ fun GameScreen(
                     text = oversText,
                     style = MaterialTheme.typography.bodyLarge
                 )
-                
+
                 if (state.phase == Phase.INNINGS_2 && state.target != null) {
                     Spacer(modifier = Modifier.height(8.dp))
                     Text(
@@ -151,81 +175,65 @@ fun GameScreen(
             }
         }
 
-        // Last Ball Result
+        // The book, and the result of the page it landed on.
         Column(
-            horizontalAlignment = Alignment.CenterHorizontally
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-            Text(
-                text = "Last Ball",
-                style = MaterialTheme.typography.labelLarge,
-                color = MaterialTheme.colorScheme.outline
-            )
-            Spacer(modifier = Modifier.height(8.dp))
-            Box(
-                modifier = Modifier
-                    .size(width = 140.dp, height = 168.dp)
-                    .graphicsLayer {
-                        scaleX = resultScale.value
-                        scaleY = resultScale.value
-                        translationX = resultShake.value
-                        rotationY = pageRotation.value
-                        cameraDistance = 12f * density
-                        // Pivot near the spine (left edge) so the page turns like a real
-                        // book page instead of spinning around its own center.
-                        transformOrigin = TransformOrigin(0.08f, 0.5f)
-                    }
-                    .clip(RoundedCornerShape(14.dp))
-                    .background(
-                        if (displayedBall?.isOut == true) MaterialTheme.colorScheme.errorContainer
-                        else MaterialTheme.colorScheme.secondaryContainer
-                    ),
-                contentAlignment = Alignment.Center
+            FlipBook(state = book, modifier = Modifier.fillMaxWidth())
+
+            val ball = shownBall
+            Surface(
+                shape = RoundedCornerShape(50),
+                color = when {
+                    ball == null -> MaterialTheme.colorScheme.surfaceVariant
+                    ball.isOut -> MaterialTheme.colorScheme.errorContainer
+                    else -> MaterialTheme.colorScheme.secondaryContainer
+                },
+                modifier = Modifier.graphicsLayer {
+                    scaleX = resultScale.value
+                    scaleY = resultScale.value
+                    translationX = resultShake.value
+                }
             ) {
-                // Book spine, near the left edge, to sell the "page" shape.
-                Box(
-                    modifier = Modifier
-                        .align(Alignment.CenterStart)
-                        .padding(start = 12.dp)
-                        .fillMaxHeight(0.8f)
-                        .width(1.5.dp)
-                        .background(
-                            (if (displayedBall?.isOut == true) MaterialTheme.colorScheme.onErrorContainer
-                            else MaterialTheme.colorScheme.onSecondaryContainer).copy(alpha = 0.2f)
-                        )
+                Text(
+                    text = when {
+                        ball == null && computerBatting -> "$batterName is about to bat"
+                        ball == null -> "Flip the book to bat"
+                        ball.isOut -> "OUT! · Page ${ball.page}"
+                        else -> "${ball.runs} run${if (ball.runs == 1) "" else "s"} · Page ${ball.page}"
+                    },
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = when {
+                        ball == null -> MaterialTheme.colorScheme.onSurfaceVariant
+                        ball.isOut -> MaterialTheme.colorScheme.error
+                        else -> MaterialTheme.colorScheme.onSecondaryContainer
+                    },
+                    modifier = Modifier.padding(horizontal = 20.dp, vertical = 10.dp)
                 )
-                displayedBall?.let { ball ->
-                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        Text(
-                            text = if (ball.isOut) "OUT" else ball.runs.toString(),
-                            style = MaterialTheme.typography.displaySmall,
-                            fontWeight = FontWeight.ExtraBold,
-                            color = if (ball.isOut) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSecondaryContainer
-                        )
-                        Text(
-                            text = "Page ${ball.page}",
-                            style = MaterialTheme.typography.labelSmall
-                        )
-                    }
-                } ?: Text("—", style = MaterialTheme.typography.displaySmall)
             }
         }
 
-        // Flip Button
+        // Flip Button — disabled while the computer bats; it flips on its own.
         Button(
-            onClick = handleFlip,
-            enabled = !isAnimating,
+            onClick = { scope.launch { playTurn() } },
+            enabled = !isAnimating && !computerBatting,
             modifier = Modifier
-                .size(160.dp)
+                .size(128.dp)
                 .clip(CircleShape),
             colors = ButtonDefaults.buttonColors(
                 containerColor = MaterialTheme.colorScheme.primary
             )
         ) {
             Text(
-                text = if (isAnimating) "..." else "FLIP",
+                text = when {
+                    computerBatting -> "CPU"
+                    isAnimating -> "..."
+                    else -> "FLIP"
+                },
                 style = MaterialTheme.typography.headlineMedium,
-                fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.onPrimary
+                fontWeight = FontWeight.Bold
             )
         }
     }
@@ -243,7 +251,8 @@ fun GameScreenPreview() {
                 innings2 = InningsState(Player.TWO),
                 lastBall = BallResult(124, 4, false)
             ),
-            onFlip = { null }
+            onDrawBall = { null },
+            onCommitBall = {}
         )
     }
 }

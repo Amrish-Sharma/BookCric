@@ -24,12 +24,19 @@ class GameViewModel(private val savedStateHandle: SavedStateHandle) : ViewModel(
         savedStateHandle[KEY_GAME_STATE] = GameLogic.startMatch(config)
     }
 
-    /** Flip the "book" to play one ball in the current innings. Returns the resulting ball. */
-    fun flip(): BallResult? {
+    /**
+     * Draw the next ball without applying it, so the UI can animate the page turn first.
+     * Pass the result to [commitBall] once the page has landed.
+     */
+    fun drawBall(): BallResult? {
         val currentState = uiState.value ?: return null
-        val updated = GameLogic.playBall(currentState, rng)
-        savedStateHandle[KEY_GAME_STATE] = updated
-        return updated.lastBall
+        return GameLogic.flip(rng, currentState.config.bookPages)
+    }
+
+    /** Apply a ball previously returned by [drawBall] to the current innings. */
+    fun commitBall(ball: BallResult) {
+        val currentState = uiState.value ?: return
+        savedStateHandle[KEY_GAME_STATE] = GameLogic.applyBall(currentState, ball)
     }
 
     /** Transition from the break into the second innings. */

@@ -137,6 +137,30 @@ class GameLogicTest {
         assertNull(s.lastBall)
     }
 
+    @Test
+    fun applyBallMatchesPlayBall() {
+        val s = GameLogic.startMatch(cfg)
+        val ball = GameLogic.flip(QueueRandom(listOf(runVal(6))), 400)
+        assertEquals(GameLogic.playBall(s, QueueRandom(listOf(runVal(6)))), GameLogic.applyBall(s, ball))
+    }
+
+    @Test
+    fun computerTurnOnlyWhenComputerBats() {
+        val vsCpu = cfg.copy(vsComputer = true)
+        // Human (Player.ONE) bats first; computer chases.
+        var s = GameLogic.startMatch(vsCpu)
+        assertFalse(GameLogic.isComputerTurn(s))
+        s = GameLogic.playBall(s, QueueRandom(listOf(OUT)))
+        assertFalse(GameLogic.isComputerTurn(s))               // innings break
+        s = GameLogic.startSecondInnings(s)
+        assertTrue(GameLogic.isComputerTurn(s))
+
+        // Computer bats first.
+        assertTrue(GameLogic.isComputerTurn(GameLogic.startMatch(vsCpu.copy(battingFirst = Player.TWO))))
+        // Two-player matches never auto-flip.
+        assertFalse(GameLogic.isComputerTurn(GameLogic.startMatch(cfg.copy(battingFirst = Player.TWO))))
+    }
+
     private fun firstInningsOf4(): GameState {
         var s = GameLogic.startMatch(cfg)
         s = GameLogic.playBall(s, QueueRandom(listOf(runVal(4)))) // 4
