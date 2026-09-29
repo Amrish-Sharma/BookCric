@@ -22,6 +22,8 @@ import com.codebuzz.app.bookcric.ui.components.rememberBookState
 import com.codebuzz.app.bookcric.ui.theme.BookCricketTheme
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.emptyFlow
 import kotlinx.coroutines.launch
 import kotlin.random.Random
 
@@ -36,11 +38,13 @@ fun GameScreen(
     state: GameState,
     onDrawBall: () -> BallResult?,
     onCommitBall: (BallResult) -> Unit,
+    remoteBalls: Flow<BallResult> = emptyFlow(),
     modifier: Modifier = Modifier
 ) {
     val currentInnings = if (state.phase == Phase.INNINGS_1) state.innings1 else state.innings2
     val batterName = if (currentInnings.batter == Player.ONE) state.config.playerOneName else state.config.playerTwoName
     val computerBatting = GameLogic.isComputerTurn(state)
+    val remoteBatting = GameLogic.isRemoteTurn(state)
 
     val overs = currentInnings.ballsBowled / 6
     val balls = currentInnings.ballsBowled % 6
@@ -88,10 +92,9 @@ fun GameScreen(
         }
     }
 
-    // Riffle through the book, land on the drawn page, then commit the ball.
-    suspend fun playTurn() {
+    // Riffle through the book, land on [ball]'s page, then commit it.
+    suspend fun playTurn(ball: BallResult) {
         if (isAnimating) return
-        val ball = onDrawBall() ?: return
         isAnimating = true
         try {
             // Thumb forward through a few pages. Sheets overlap in flight, and each one is let
@@ -120,11 +123,16 @@ fun GameScreen(
         }
     }
 
+    // The online opponent's flips arrive one at a time and play out exactly like a local flip.
+    LaunchedEffect(Unit) {
+        remoteBalls.collect { playTurn(it) }
+    }
+
     // The computer flips on its own, once per ball.
     LaunchedEffect(computerBatting, currentInnings.ballsBowled) {
         if (computerBatting) {
             delay(COMPUTER_THINK_MILLIS)
-            playTurn()
+            onDrawBall()?.let { playTurn(it) }
         }
     }
 
@@ -199,6 +207,7 @@ fun GameScreen(
                 Text(
                     text = when {
                         ball == null && computerBatting -> "$batterName is about to bat"
+                        ball == null && remoteBatting -> "Waiting for $batterName to flip"
                         ball == null -> "Flip the book to bat"
                         ball.isOut -> "OUT! · Page ${ball.page}"
                         else -> "${ball.runs} run${if (ball.runs == 1) "" else "s"} · Page ${ball.page}"
@@ -215,10 +224,10 @@ fun GameScreen(
             }
         }
 
-        // Flip Button — disabled while the computer bats; it flips on its own.
+        // Flip Button — disabled while the computer or the online opponent bats.
         Button(
-            onClick = { scope.launch { playTurn() } },
-            enabled = !isAnimating && !computerBatting,
+            onClick = { scope.launch { onDrawBall()?.let { playTurn(it) } } },
+            enabled = !isAnimating && !computerBatting && !remoteBatting,
             modifier = Modifier
                 .size(128.dp)
                 .clip(CircleShape),
@@ -229,6 +238,7 @@ fun GameScreen(
             Text(
                 text = when {
                     computerBatting -> "CPU"
+                    remoteBatting -> "WAIT"
                     isAnimating -> "..."
                     else -> "FLIP"
                 },

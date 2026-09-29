@@ -15,19 +15,29 @@ import androidx.compose.ui.unit.dp
 import com.codebuzz.app.bookcric.game.MatchConfig
 import com.codebuzz.app.bookcric.game.Player
 import com.codebuzz.app.bookcric.ui.theme.BookCricketTheme
+import kotlin.random.Random
 
 @Composable
 fun SetupScreen(
     onStartMatch: (MatchConfig) -> Unit,
+    onPlayOnline: (name: String) -> Unit,
     modifier: Modifier = Modifier
 ) {
     var player1Name by remember { mutableStateOf("") }
     var player2Name by remember { mutableStateOf("") }
     var battingFirst by remember { mutableStateOf(Player.ONE) }
     var oversLimitOption by remember { mutableStateOf<Int?>(1) }
-    var vsComputer by remember { mutableStateOf(false) }
+    var mode by remember { mutableStateOf(SetupMode.FRIEND) }
+    val vsComputer = mode == SetupMode.COMPUTER
+    val online = mode == SetupMode.ONLINE
+    // Online the opponent sees this name, so the default must mean something to them.
+    val defaultOnlineName = remember { "Player ${Random.nextInt(100, 1000)}" }
 
-    val defaultPlayerOneName = if (vsComputer) "You" else "Player 1"
+    val defaultPlayerOneName = when (mode) {
+        SetupMode.FRIEND -> "Player 1"
+        SetupMode.COMPUTER -> "You"
+        SetupMode.ONLINE -> defaultOnlineName
+    }
     val playerOneLabel = player1Name.ifBlank { defaultPlayerOneName }
     val playerTwoLabel = if (vsComputer) MatchConfig.COMPUTER_NAME else player2Name.ifBlank { "Player 2" }
 
@@ -45,13 +55,13 @@ fun SetupScreen(
         )
 
         SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
-            listOf(false to "vs Friend", true to "vs Computer").forEachIndexed { index, (computer, label) ->
+            SetupMode.entries.forEachIndexed { index, option ->
                 SegmentedButton(
-                    selected = vsComputer == computer,
-                    onClick = { vsComputer = computer },
-                    shape = SegmentedButtonDefaults.itemShape(index = index, count = 2)
+                    selected = mode == option,
+                    onClick = { mode = option },
+                    shape = SegmentedButtonDefaults.itemShape(index = index, count = SetupMode.entries.size)
                 ) {
-                    Text(label)
+                    Text(option.label)
                 }
             }
         }
@@ -59,13 +69,13 @@ fun SetupScreen(
         OutlinedTextField(
             value = player1Name,
             onValueChange = { player1Name = it },
-            label = { Text(if (vsComputer) "Your Name" else "Player 1 Name") },
+            label = { Text(if (mode == SetupMode.FRIEND) "Player 1 Name" else "Your Name") },
             placeholder = { Text(defaultPlayerOneName) },
             modifier = Modifier.fillMaxWidth(),
             singleLine = true
         )
 
-        if (!vsComputer) {
+        if (mode == SetupMode.FRIEND) {
             OutlinedTextField(
                 value = player2Name,
                 onValueChange = { player2Name = it },
@@ -76,65 +86,104 @@ fun SetupScreen(
             )
         }
 
-        Text(
-            text = "Who bats first?",
-            style = MaterialTheme.typography.titleMedium,
-            modifier = Modifier.align(Alignment.Start)
-        )
-
-        Row(
-            Modifier.fillMaxWidth().selectableGroup(),
-            horizontalArrangement = Arrangement.spacedBy(16.dp)
-        ) {
-            PlayerRadioOption(
-                label = playerOneLabel,
-                selected = battingFirst == Player.ONE,
-                onClick = { battingFirst = Player.ONE }
+        if (online) {
+            Text(
+                text = "Play against a friend on their own phone. Both phones need to be close " +
+                    "together with Bluetooth and Wi-Fi turned on — no internet needed.",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
             )
-            PlayerRadioOption(
-                label = playerTwoLabel,
-                selected = battingFirst == Player.TWO,
-                onClick = { battingFirst = Player.TWO }
+        } else {
+            MatchOptions(
+                playerOneLabel = playerOneLabel,
+                playerTwoLabel = playerTwoLabel,
+                battingFirst = battingFirst,
+                onBattingFirstChange = { battingFirst = it },
+                oversLimit = oversLimitOption,
+                onOversLimitChange = { oversLimitOption = it }
             )
-        }
-
-        Text(
-            text = "Overs limit",
-            style = MaterialTheme.typography.titleMedium,
-            modifier = Modifier.align(Alignment.Start)
-        )
-
-        val options = listOf(1, 2, 5, null)
-        Row(
-            Modifier.fillMaxWidth().selectableGroup(),
-            horizontalArrangement = Arrangement.SpaceBetween
-        ) {
-            options.forEach { option ->
-                OversOption(
-                    label = option?.toString() ?: "Unlimited",
-                    selected = oversLimitOption == option,
-                    onClick = { oversLimitOption = option }
-                )
-            }
         }
 
         Spacer(modifier = Modifier.weight(1f))
 
         Button(
             onClick = {
-                onStartMatch(
-                    MatchConfig(
-                        playerOneName = playerOneLabel,
-                        playerTwoName = playerTwoLabel,
-                        battingFirst = battingFirst,
-                        oversLimit = oversLimitOption,
-                        vsComputer = vsComputer
+                if (online) {
+                    onPlayOnline(playerOneLabel.trim())
+                } else {
+                    onStartMatch(
+                        MatchConfig(
+                            playerOneName = playerOneLabel,
+                            playerTwoName = playerTwoLabel,
+                            battingFirst = battingFirst,
+                            oversLimit = oversLimitOption,
+                            vsComputer = vsComputer
+                        )
                     )
-                )
+                }
             },
             modifier = Modifier.fillMaxWidth().height(56.dp)
         ) {
-            Text("Start Match")
+            Text(if (online) "Find a Friend Nearby" else "Start Match")
+        }
+    }
+}
+
+private enum class SetupMode(val label: String) {
+    FRIEND("vs Friend"),
+    COMPUTER("vs Computer"),
+    ONLINE("Online")
+}
+
+/** Who bats first and the overs cap. Shared by the setup screen and the online host's lobby. */
+@Composable
+fun MatchOptions(
+    playerOneLabel: String,
+    playerTwoLabel: String,
+    battingFirst: Player,
+    onBattingFirstChange: (Player) -> Unit,
+    oversLimit: Int?,
+    onOversLimitChange: (Int?) -> Unit
+) {
+    Text(
+        text = "Who bats first?",
+        style = MaterialTheme.typography.titleMedium,
+        modifier = Modifier.fillMaxWidth()
+    )
+
+    Row(
+        Modifier.fillMaxWidth().selectableGroup(),
+        horizontalArrangement = Arrangement.spacedBy(16.dp)
+    ) {
+        PlayerRadioOption(
+            label = playerOneLabel,
+            selected = battingFirst == Player.ONE,
+            onClick = { onBattingFirstChange(Player.ONE) }
+        )
+        PlayerRadioOption(
+            label = playerTwoLabel,
+            selected = battingFirst == Player.TWO,
+            onClick = { onBattingFirstChange(Player.TWO) }
+        )
+    }
+
+    Text(
+        text = "Overs limit",
+        style = MaterialTheme.typography.titleMedium,
+        modifier = Modifier.fillMaxWidth()
+    )
+
+    val options = listOf(1, 2, 5, null)
+    Row(
+        Modifier.fillMaxWidth().selectableGroup(),
+        horizontalArrangement = Arrangement.SpaceBetween
+    ) {
+        options.forEach { option ->
+            OversOption(
+                label = option?.toString() ?: "Unlimited",
+                selected = oversLimit == option,
+                onClick = { onOversLimitChange(option) }
+            )
         }
     }
 }
@@ -184,6 +233,6 @@ fun OversOption(
 @Composable
 fun SetupScreenPreview() {
     BookCricketTheme {
-        SetupScreen(onStartMatch = {})
+        SetupScreen(onStartMatch = {}, onPlayOnline = {})
     }
 }

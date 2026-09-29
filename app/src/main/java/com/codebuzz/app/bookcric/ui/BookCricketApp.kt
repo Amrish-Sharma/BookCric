@@ -11,6 +11,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.codebuzz.app.bookcric.game.Phase
 import com.codebuzz.app.bookcric.ui.screens.GameScreen
 import com.codebuzz.app.bookcric.ui.screens.InningsBreakScreen
+import com.codebuzz.app.bookcric.ui.screens.OnlineLobbyScreen
 import com.codebuzz.app.bookcric.ui.screens.ResultScreen
 import com.codebuzz.app.bookcric.ui.screens.SetupScreen
 import com.codebuzz.app.bookcric.ui.theme.BookCricketTheme
@@ -20,15 +21,29 @@ fun BookCricketApp(
     viewModel: GameViewModel = viewModel()
 ) {
     val uiState by viewModel.uiState.collectAsState()
+    val lobby by viewModel.lobby.collectAsState()
 
     BookCricketTheme {
         Scaffold(modifier = Modifier.fillMaxSize()) { innerPadding ->
             val modifier = Modifier.padding(innerPadding)
-            
+
             val state = uiState
-            if (state == null) {
+            val onlineLobby = lobby
+            if (state == null && onlineLobby != null) {
+                OnlineLobbyScreen(
+                    lobby = onlineLobby,
+                    onHost = { viewModel.hostOnline() },
+                    onJoin = { viewModel.joinOnline() },
+                    onConnect = { viewModel.connectTo(it) },
+                    onCancel = { viewModel.cancelOnline() },
+                    onStartMatch = { viewModel.startMatch(it) },
+                    onLeave = { viewModel.leaveOnline() },
+                    modifier = modifier
+                )
+            } else if (state == null) {
                 SetupScreen(
                     onStartMatch = { viewModel.startMatch(it) },
+                    onPlayOnline = { viewModel.openOnline(it) },
                     modifier = modifier
                 )
             } else {
@@ -36,6 +51,7 @@ fun BookCricketApp(
                     Phase.SETUP -> { // Should not happen based on ViewModel logic but good to handle
                         SetupScreen(
                             onStartMatch = { viewModel.startMatch(it) },
+                            onPlayOnline = { viewModel.openOnline(it) },
                             modifier = modifier
                         )
                     }
@@ -44,6 +60,7 @@ fun BookCricketApp(
                             state = state,
                             onDrawBall = { viewModel.drawBall() },
                             onCommitBall = { viewModel.commitBall(it) },
+                            remoteBalls = viewModel.remoteBalls,
                             modifier = modifier
                         )
                     }

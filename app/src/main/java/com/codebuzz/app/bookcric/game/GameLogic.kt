@@ -22,6 +22,8 @@ enum class Phase { SETUP, INNINGS_1, INNINGS_BREAK, INNINGS_2, RESULT }
  * @param bookPages length of the "book". Kept even (default 400) so the even-page outcomes
  *   {0, 2, 4, 6, 8} come up exactly uniformly.
  * @param vsComputer when true, [Player.TWO] is the computer and bats automatically.
+ * @param localPlayer set only for online matches: the player this device controls. The other
+ *   player's balls arrive over the network. null == both players share this device.
  */
 @Serializable
 @Parcelize
@@ -31,9 +33,15 @@ data class MatchConfig(
     val battingFirst: Player,
     val oversLimit: Int?,          // null == unlimited
     val bookPages: Int = 400,
-    val vsComputer: Boolean = false
+    val vsComputer: Boolean = false,
+    val localPlayer: Player? = null
 ) : Parcelable {
     fun isComputer(player: Player): Boolean = vsComputer && player == Player.TWO
+
+    val isOnline: Boolean get() = localPlayer != null
+
+    /** True when [player] is flipping on another device in an online match. */
+    fun isRemote(player: Player): Boolean = localPlayer != null && player != localPlayer
 
     companion object {
         const val COMPUTER_NAME = "Computer"
@@ -164,10 +172,18 @@ object GameLogic {
     }
 
     /** True when the computer is at the crease and should flip on its own. */
-    fun isComputerTurn(state: GameState): Boolean = when (state.phase) {
-        Phase.INNINGS_1 -> state.config.isComputer(state.innings1.batter)
-        Phase.INNINGS_2 -> state.config.isComputer(state.innings2.batter)
-        else -> false
+    fun isComputerTurn(state: GameState): Boolean =
+        currentBatter(state)?.let(state.config::isComputer) ?: false
+
+    /** True when the online opponent is at the crease and their flip will arrive over the network. */
+    fun isRemoteTurn(state: GameState): Boolean =
+        currentBatter(state)?.let(state.config::isRemote) ?: false
+
+    /** The player at the crease, or null outside an innings. */
+    fun currentBatter(state: GameState): Player? = when (state.phase) {
+        Phase.INNINGS_1 -> state.innings1.batter
+        Phase.INNINGS_2 -> state.innings2.batter
+        else -> null
     }
 
     /** Move from the innings break into the chase. */

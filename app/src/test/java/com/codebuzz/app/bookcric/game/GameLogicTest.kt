@@ -162,6 +162,22 @@ class GameLogicTest {
     }
 
     @Test
+    fun remoteTurnOnlyWhenOpponentBatsOnline() {
+        // Host's phone (Player.ONE), host bats first.
+        var host = GameLogic.startMatch(cfg.copy(localPlayer = Player.ONE))
+        assertFalse(GameLogic.isRemoteTurn(host))
+        host = GameLogic.applyBall(host, BallResult(10, 0, true))
+        assertFalse(GameLogic.isRemoteTurn(host))              // innings break
+        host = GameLogic.startSecondInnings(host)
+        assertTrue(GameLogic.isRemoteTurn(host))
+
+        // Guest's phone sees the mirror image.
+        assertTrue(GameLogic.isRemoteTurn(GameLogic.startMatch(cfg.copy(localPlayer = Player.TWO))))
+        // Pass-and-play matches are never remote.
+        assertFalse(GameLogic.isRemoteTurn(GameLogic.startMatch(cfg.copy(battingFirst = Player.TWO))))
+    }
+
+    @Test
     fun winnerIsTheInningsBatterWhenPlayerTwoBatsFirst() {
         var s = GameLogic.startMatch(cfg.copy(battingFirst = Player.TWO))
         s = GameLogic.applyBall(s, BallResult(8, 8, false))
