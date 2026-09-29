@@ -211,18 +211,15 @@ private fun ResultPoster(
                 modifier = Modifier.fillMaxWidth(),
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                PosterScoreRow(
-                    playerName = state.config.playerOneName,
-                    runs = state.innings1.runs,
-                    isBattingFirst = state.config.battingFirst == Player.ONE,
-                    isWinner = (outcome as? MatchOutcome.Win)?.winner == Player.ONE
-                )
-                PosterScoreRow(
-                    playerName = state.config.playerTwoName,
-                    runs = state.innings2.runs,
-                    isBattingFirst = state.config.battingFirst == Player.TWO,
-                    isWinner = (outcome as? MatchOutcome.Win)?.winner == Player.TWO
-                )
+                // Rows follow batting order; name and runs both come from the innings itself.
+                listOf(state.innings1, state.innings2).forEachIndexed { index, innings ->
+                    PosterScoreRow(
+                        playerName = if (innings.batter == Player.ONE) state.config.playerOneName else state.config.playerTwoName,
+                        runs = innings.runs,
+                        isBattingFirst = index == 0,
+                        isWinner = (outcome as? MatchOutcome.Win)?.winner == innings.batter
+                    )
+                }
             }
 
             Text(

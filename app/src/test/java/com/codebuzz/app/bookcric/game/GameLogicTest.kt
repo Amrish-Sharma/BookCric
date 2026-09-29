@@ -161,6 +161,18 @@ class GameLogicTest {
         assertFalse(GameLogic.isComputerTurn(GameLogic.startMatch(cfg.copy(battingFirst = Player.TWO))))
     }
 
+    @Test
+    fun winnerIsTheInningsBatterWhenPlayerTwoBatsFirst() {
+        var s = GameLogic.startMatch(cfg.copy(battingFirst = Player.TWO))
+        s = GameLogic.applyBall(s, BallResult(8, 8, false))
+        s = GameLogic.applyBall(s, BallResult(10, 0, true))
+        s = GameLogic.startSecondInnings(s)
+        s = GameLogic.applyBall(s, BallResult(2, 2, false))
+        s = GameLogic.applyBall(s, BallResult(10, 0, true))
+        assertEquals(Player.TWO, s.innings1.batter)
+        assertEquals(MatchOutcome.Win(Player.TWO), GameLogic.outcome(s))
+    }
+
     private fun firstInningsOf4(): GameState {
         var s = GameLogic.startMatch(cfg)
         s = GameLogic.playBall(s, QueueRandom(listOf(runVal(4)))) // 4
