@@ -143,8 +143,9 @@ class NearbySession(context: Context) {
 
     private val lifecycleCallback = object : ConnectionLifecycleCallback() {
         override fun onConnectionInitiated(endpointId: String, info: ConnectionInfo) {
-            // Point-to-point: once we have an opponent, nobody else gets in.
-            if (peerId != null) {
+            // Point-to-point: once we have an opponent, or are mid-handshake with one, nobody
+            // else gets in.
+            if (peerId != null || peerNames.isNotEmpty()) {
                 client.rejectConnection(endpointId)
                 return
             }
@@ -154,6 +155,8 @@ class NearbySession(context: Context) {
         }
 
         override fun onConnectionResult(endpointId: String, resolution: ConnectionResolution) {
+            // A latecomer we rejected reports here too; it must not disturb the real connection.
+            if (endpointId !in peerNames) return
             val name = peerNames[endpointId] ?: "Opponent"
             if (resolution.status.isSuccess) {
                 peerId = endpointId

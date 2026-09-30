@@ -14,13 +14,11 @@ import com.codebuzz.app.bookcric.online.ConnectionStatus
 import com.codebuzz.app.bookcric.online.NearbyEndpoint
 import com.codebuzz.app.bookcric.online.NearbySession
 import com.codebuzz.app.bookcric.online.NetMessage
-import kotlinx.coroutines.channels.Channel
-import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
-import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlin.random.Random
@@ -50,10 +48,18 @@ class GameViewModel(
         name?.let { OnlineLobby(it, status) }
     }.stateIn(viewModelScope, SharingStarted.Eagerly, null)
 
-    private val remoteBallQueue = Channel<BallResult>(Channel.UNLIMITED)
+    private val _pendingBall = MutableStateFlow<BallResult?>(null)
 
-    /** Balls flipped by the online opponent, to be animated and then passed to [commitBall]. */
-    val remoteBalls: Flow<BallResult> = remoteBallQueue.receiveAsFlow()
+    /**
+     * The ball being flipped right now: drawn here or by the online opponent, but not yet
+     * applied. The UI animates it and then hands it to [commitBall]. Held here rather than in
+     * the screen so a flip interrupted by an activity rebuild is replayed, not lost — online,
+     * the other phone has already counted it.
+     */
+    val pendingBall: StateFlow<BallResult?> = _pendingBall.asStateFlow()
+
+    /** Opponent balls that arrived while [pendingBall] was still being animated. */
+    private val queuedBalls = ArrayDeque<BallResult>()
 
     init {
         // A restored online match can't continue: the connection died with the old process.
@@ -86,22 +92,24 @@ class GameViewModel(
     }
 
     /**
-     * Draw the next ball without applying it, so the UI can animate the page turn first.
-     * Pass the result to [commitBall] once the page has landed. Online, the ball is sent
-     * straight away so the opponent's book turns at the same time.
+     * Draw the next ball into [pendingBall] without applying it, so the UI can animate the page
+     * turn first. Online, the ball is sent straight away so the opponent's book turns at the
+     * same time. Ignored while another ball is still in flight, so a double tap draws only once.
      */
-    fun drawBall(): BallResult? {
-        val currentState = uiState.value ?: return null
-        if (GameLogic.isRemoteTurn(currentState)) return null
+    fun drawBall() {
+        val currentState = uiState.value ?: return
+        if (_pendingBall.value != null || GameLogic.isRemoteTurn(currentState)) return
         val ball = GameLogic.flip(rng, currentState.config.bookPages)
         if (currentState.config.isOnline) session.send(NetMessage.Ball(ball))
-        return ball
+        _pendingBall.value = ball
     }
 
-    /** Apply a ball previously returned by [drawBall] or [remoteBalls] to the current innings. */
+    /** Apply [pendingBall] to the current innings once its page has landed. */
     fun commitBall(ball: BallResult) {
+        if (ball !== _pendingBall.value) return
         val currentState = uiState.value ?: return
         savedStateHandle[KEY_GAME_STATE] = GameLogic.applyBall(currentState, ball)
+        _pendingBall.value = queuedBalls.removeFirstOrNull()
     }
 
     /** Transition from the break into the second innings. */
@@ -150,7 +158,9 @@ class GameViewModel(
                 savedStateHandle[KEY_GAME_STATE] =
                     GameLogic.startMatch(message.config.copy(localPlayer = Player.TWO))
             }
-            is NetMessage.Ball -> remoteBallQueue.trySend(message.ball)
+            is NetMessage.Ball ->
+                if (_pendingBall.value == null) _pendingBall.value = message.ball
+                else queuedBalls.addLast(message.ball)
             NetMessage.StartChase -> uiState.value?.let {
                 savedStateHandle[KEY_GAME_STATE] = GameLogic.startSecondInnings(it)
             }
@@ -159,7 +169,8 @@ class GameViewModel(
     }
 
     private fun resetMatch() {
-        while (remoteBallQueue.tryReceive().isSuccess) Unit
+        queuedBalls.clear()
+        _pendingBall.value = null
         savedStateHandle[KEY_GAME_STATE] = null
     }
 

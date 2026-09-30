@@ -22,6 +22,7 @@ fun BookCricketApp(
 ) {
     val uiState by viewModel.uiState.collectAsState()
     val lobby by viewModel.lobby.collectAsState()
+    val pendingBall by viewModel.pendingBall.collectAsState()
 
     BookCricketTheme {
         Scaffold(modifier = Modifier.fillMaxSize()) { innerPadding ->
@@ -58,9 +59,9 @@ fun BookCricketApp(
                     Phase.INNINGS_1, Phase.INNINGS_2 -> {
                         GameScreen(
                             state = state,
+                            pendingBall = pendingBall,
                             onDrawBall = { viewModel.drawBall() },
                             onCommitBall = { viewModel.commitBall(it) },
-                            remoteBalls = viewModel.remoteBalls,
                             modifier = modifier
                         )
                     }

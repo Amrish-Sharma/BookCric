@@ -22,8 +22,6 @@ import com.codebuzz.app.bookcric.ui.components.rememberBookState
 import com.codebuzz.app.bookcric.ui.theme.BookCricketTheme
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.emptyFlow
 import kotlinx.coroutines.launch
 import kotlin.random.Random
 
@@ -36,9 +34,9 @@ private const val INNINGS_END_HOLD_MILLIS = 1400L
 @Composable
 fun GameScreen(
     state: GameState,
-    onDrawBall: () -> BallResult?,
+    pendingBall: BallResult?,
+    onDrawBall: () -> Unit,
     onCommitBall: (BallResult) -> Unit,
-    remoteBalls: Flow<BallResult> = emptyFlow(),
     modifier: Modifier = Modifier
 ) {
     val currentInnings = if (state.phase == Phase.INNINGS_1) state.innings1 else state.innings2
@@ -51,11 +49,11 @@ fun GameScreen(
     val oversText = "$overs.$balls overs"
 
     // Animation States
-    var isAnimating by remember { mutableStateOf(false) }
+    // A ball is in flight from the moment it's drawn until it's committed.
+    val isAnimating = pendingBall != null
     var shownBall by remember { mutableStateOf(state.lastBall) }
     val latestState by rememberUpdatedState(state)
     val haptic = LocalHapticFeedback.current
-    val scope = rememberCoroutineScope()
 
     val resultScale = remember { Animatable(1f) }
     val resultShake = remember { Animatable(0f) }
@@ -94,45 +92,40 @@ fun GameScreen(
 
     // Riffle through the book, land on [ball]'s page, then commit it.
     suspend fun playTurn(ball: BallResult) {
-        if (isAnimating) return
-        isAnimating = true
-        try {
-            // Thumb forward through a few pages. Sheets overlap in flight, and each one is let
-            // go a little later and falls a little slower, like a stack losing momentum.
-            val decoyPages = List(6) { GameLogic.drawEvenPage(Random, latestState.config.bookPages) }.sorted()
-            coroutineScope {
-                decoyPages.forEachIndexed { i, page ->
-                    launch { book.turnTo(PageFace(page), durationMillis = 380 + i * 45) }
-                    haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                    delay(70L + i * 20L)
-                }
-                delay(90)
+        // Thumb forward through a few pages. Sheets overlap in flight, and each one is let
+        // go a little later and falls a little slower, like a stack losing momentum.
+        val decoyPages = List(6) { GameLogic.drawEvenPage(Random, latestState.config.bookPages) }.sorted()
+        coroutineScope {
+            decoyPages.forEachIndexed { i, page ->
+                launch { book.turnTo(PageFace(page), durationMillis = 380 + i * 45) }
                 haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                book.turnTo(PageFace(ball.page, highlight = true, isOut = ball.isOut), durationMillis = 720)
+                delay(70L + i * 20L)
             }
-            shownBall = ball
-
-            // Let an innings-ending ball sink in before the screen moves on.
-            val current = latestState
-            if (GameLogic.applyBall(current, ball).phase != current.phase) {
-                delay(INNINGS_END_HOLD_MILLIS)
-            }
-            onCommitBall(ball)
-        } finally {
-            isAnimating = false
+            delay(90)
+            haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+            book.turnTo(PageFace(ball.page, highlight = true, isOut = ball.isOut), durationMillis = 720)
         }
+        shownBall = ball
+
+        // Let an innings-ending ball sink in before the screen moves on.
+        val current = latestState
+        if (GameLogic.applyBall(current, ball).phase != current.phase) {
+            delay(INNINGS_END_HOLD_MILLIS)
+        }
+        onCommitBall(ball)
     }
 
-    // The online opponent's flips arrive one at a time and play out exactly like a local flip.
-    LaunchedEffect(Unit) {
-        remoteBalls.collect { playTurn(it) }
+    // Animate whichever ball is pending: ours, the computer's or the online opponent's. Keyed on
+    // the ball, so if the screen is rebuilt mid-flip the flip replays instead of being dropped.
+    LaunchedEffect(pendingBall) {
+        pendingBall?.let { playTurn(it) }
     }
 
     // The computer flips on its own, once per ball.
     LaunchedEffect(computerBatting, currentInnings.ballsBowled) {
         if (computerBatting) {
             delay(COMPUTER_THINK_MILLIS)
-            onDrawBall()?.let { playTurn(it) }
+            onDrawBall()
         }
     }
 
@@ -226,7 +219,7 @@ fun GameScreen(
 
         // Flip Button — disabled while the computer or the online opponent bats.
         Button(
-            onClick = { scope.launch { onDrawBall()?.let { playTurn(it) } } },
+            onClick = onDrawBall,
             enabled = !isAnimating && !computerBatting && !remoteBatting,
             modifier = Modifier
                 .size(128.dp)
@@ -261,7 +254,8 @@ fun GameScreenPreview() {
                 innings2 = InningsState(Player.TWO),
                 lastBall = BallResult(124, 4, false)
             ),
-            onDrawBall = { null },
+            pendingBall = null,
+            onDrawBall = {},
             onCommitBall = {}
         )
     }
