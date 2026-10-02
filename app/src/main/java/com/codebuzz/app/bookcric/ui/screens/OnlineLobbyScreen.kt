@@ -27,15 +27,24 @@ import com.codebuzz.app.bookcric.online.NearbyEndpoint
 import com.codebuzz.app.bookcric.ui.OnlineLobby
 import com.codebuzz.app.bookcric.ui.theme.BookCricketTheme
 import com.google.accompanist.permissions.ExperimentalPermissionsApi
+import com.google.accompanist.permissions.isGranted
 import com.google.accompanist.permissions.rememberMultiplePermissionsState
 
-/** Runtime permissions Nearby Connections needs to find and talk to the other phone. */
+/**
+ * Runtime permissions Nearby Connections needs to find and talk to the other phone. Discovery
+ * still checks location on many Play services builds, even though Android 12+ shouldn't need it.
+ */
 private val NEARBY_PERMISSIONS = listOf(
     Manifest.permission.BLUETOOTH_ADVERTISE,
     Manifest.permission.BLUETOOTH_CONNECT,
     Manifest.permission.BLUETOOTH_SCAN,
-    Manifest.permission.NEARBY_WIFI_DEVICES
+    Manifest.permission.NEARBY_WIFI_DEVICES,
+    Manifest.permission.ACCESS_COARSE_LOCATION,
+    Manifest.permission.ACCESS_FINE_LOCATION
 )
+
+/** Asked for alongside the rest, but "Approximate" location is enough to play. */
+private val OPTIONAL_PERMISSIONS = setOf(Manifest.permission.ACCESS_FINE_LOCATION)
 
 @OptIn(ExperimentalPermissionsApi::class)
 @Composable
@@ -78,7 +87,8 @@ fun OnlineLobbyScreen(
                 .weight(1f),
             contentAlignment = Alignment.Center
         ) {
-            if (!permissions.allPermissionsGranted) {
+            val required = permissions.permissions.filter { it.permission !in OPTIONAL_PERMISSIONS }
+            if (!required.all { it.status.isGranted }) {
                 PermissionPrompt(
                     permanentlyDenied = permissionsRequested && !permissions.shouldShowRationale,
                     onRequest = { permissions.launchMultiplePermissionRequest() }
@@ -135,7 +145,7 @@ private fun PermissionPrompt(permanentlyDenied: Boolean, onRequest: () -> Unit) 
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
         Text(
-            text = "To find your friend's phone, BookCric needs the Nearby devices permission.",
+            text = "To find your friend's phone, BookCric needs the Nearby devices and Location permissions.",
             style = MaterialTheme.typography.bodyLarge,
             textAlign = TextAlign.Center
         )

@@ -119,6 +119,8 @@ class NearbySession(context: Context) {
             ConnectionsStatusCodes.MISSING_PERMISSION_BLUETOOTH_ADVERTISE,
             ConnectionsStatusCodes.MISSING_PERMISSION_BLUETOOTH_CONNECT,
             ConnectionsStatusCodes.MISSING_PERMISSION_NEARBY_WIFI_DEVICES -> "Nearby devices permission is needed to play online."
+            ConnectionsStatusCodes.MISSING_PERMISSION_ACCESS_COARSE_LOCATION,
+            ConnectionsStatusCodes.MISSING_PERMISSION_ACCESS_FINE_LOCATION -> "Location permission is needed to find nearby phones."
             null -> error.message ?: "Something went wrong."
             else -> "Couldn't connect (${ConnectionsStatusCodes.getStatusCodeString(code)})."
         }
