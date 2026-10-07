@@ -162,6 +162,22 @@ class GameLogicTest {
     }
 
     @Test
+    fun remoteTurnOnlyWhenOpponentBatsOnline() {
+        // Host's phone (Player.ONE), host bats first.
+        var host = GameLogic.startMatch(cfg.copy(localPlayer = Player.ONE))
+        assertFalse(GameLogic.isRemoteTurn(host))
+        host = GameLogic.applyBall(host, BallResult(10, 0, true))
+        assertFalse(GameLogic.isRemoteTurn(host))              // innings break
+        host = GameLogic.startSecondInnings(host)
+        assertTrue(GameLogic.isRemoteTurn(host))
+
+        // Guest's phone sees the mirror image.
+        assertTrue(GameLogic.isRemoteTurn(GameLogic.startMatch(cfg.copy(localPlayer = Player.TWO))))
+        // Pass-and-play matches are never remote.
+        assertFalse(GameLogic.isRemoteTurn(GameLogic.startMatch(cfg.copy(battingFirst = Player.TWO))))
+    }
+
+    @Test
     fun winnerIsTheInningsBatterWhenPlayerTwoBatsFirst() {
         var s = GameLogic.startMatch(cfg.copy(battingFirst = Player.TWO))
         s = GameLogic.applyBall(s, BallResult(8, 8, false))
@@ -171,6 +187,54 @@ class GameLogicTest {
         s = GameLogic.applyBall(s, BallResult(10, 0, true))
         assertEquals(Player.TWO, s.innings1.batter)
         assertEquals(MatchOutcome.Win(Player.TWO), GameLogic.outcome(s))
+    }
+
+    @Test
+    fun inningsKeepsEveryBallInOrder() {
+        var s = GameLogic.startMatch(cfg)
+        val four = BallResult(4, 4, false)
+        val out = BallResult(10, 0, true)
+        s = GameLogic.applyBall(s, four)
+        s = GameLogic.applyBall(s, out)
+        assertEquals(listOf(four, out), s.innings1.balls)
+        assertTrue(s.innings2.balls.isEmpty())
+    }
+
+    @Test
+    fun currentOverHoldsACompletedOverUntilTheNextBall() {
+        var s = GameLogic.startMatch(cfg)
+        assertTrue(GameLogic.currentOver(s.innings1).isEmpty())
+        repeat(6) { s = GameLogic.applyBall(s, BallResult(2, 2, false)) }
+        assertEquals(6, GameLogic.currentOver(s.innings1).size)
+        s = GameLogic.applyBall(s, BallResult(6, 6, false))
+        assertEquals(listOf(BallResult(6, 6, false)), GameLogic.currentOver(s.innings1))
+    }
+
+    @Test
+    fun runRateIsRunsPerOver() {
+        var s = GameLogic.startMatch(cfg)
+        assertNull(GameLogic.runRate(s.innings1))
+        repeat(3) { s = GameLogic.applyBall(s, BallResult(4, 4, false)) }
+        assertEquals(24f, GameLogic.runRate(s.innings1)!!, 0.001f)
+    }
+
+    @Test
+    fun ballsRemainingFollowsTheOversCap() {
+        var s = GameLogic.startMatch(cfg.copy(oversLimit = 1))
+        assertEquals(6, GameLogic.ballsRemaining(s))
+        s = GameLogic.applyBall(s, BallResult(2, 2, false))
+        assertEquals(5, GameLogic.ballsRemaining(s))
+        assertNull(GameLogic.ballsRemaining(GameLogic.startMatch(cfg)))
+    }
+
+    @Test
+    fun runsNeededCountsDownDuringTheChase() {
+        var s = firstInningsOf4()
+        assertNull(GameLogic.runsNeeded(s))                       // innings break
+        s = GameLogic.startSecondInnings(s)
+        assertEquals(5, GameLogic.runsNeeded(s))
+        s = GameLogic.applyBall(s, BallResult(2, 2, false))
+        assertEquals(3, GameLogic.runsNeeded(s))
     }
 
     private fun firstInningsOf4(): GameState {
