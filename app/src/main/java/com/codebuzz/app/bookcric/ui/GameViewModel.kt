@@ -4,6 +4,10 @@ import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.viewModelScope
+import com.codebuzz.app.bookcric.audio.Sfx
+import com.codebuzz.app.bookcric.audio.SoundFx
+import com.codebuzz.app.bookcric.data.Stats
+import com.codebuzz.app.bookcric.data.StatsRepository
 import com.codebuzz.app.bookcric.game.BallResult
 import com.codebuzz.app.bookcric.game.GameLogic
 import com.codebuzz.app.bookcric.game.GameState
@@ -34,6 +38,19 @@ class GameViewModel(
     private val rng = Random.Default
 
     private val session = NearbySession(application)
+
+    private val statsRepository = StatsRepository(application)
+
+    private val sound = SoundFx()
+
+    /** Records kept on this phone, plus the sound on/off setting. */
+    val stats: StateFlow<Stats> =
+        statsRepository.stats.stateIn(viewModelScope, SharingStarted.Eagerly, Stats())
+
+    private val _newHighScore = MutableStateFlow(false)
+
+    /** True while the result on screen is of a match that set a new high score. */
+    val newHighScore: StateFlow<Boolean> = _newHighScore.asStateFlow()
 
     /**
      * The current game state, persisted across process death.
@@ -67,6 +84,7 @@ class GameViewModel(
             savedStateHandle[KEY_GAME_STATE] = null
         }
         viewModelScope.launch { session.messages.collect(::onMessage) }
+        viewModelScope.launch { stats.collect { sound.enabled = it.soundEnabled } }
         viewModelScope.launch {
             session.status.collect { status ->
                 // Opponent gone mid-match: back to the lobby, which explains why. A finished
@@ -108,8 +126,19 @@ class GameViewModel(
     fun commitBall(ball: BallResult) {
         if (ball !== _pendingBall.value) return
         val currentState = uiState.value ?: return
-        savedStateHandle[KEY_GAME_STATE] = GameLogic.applyBall(currentState, ball)
+        val next = GameLogic.applyBall(currentState, ball)
+        savedStateHandle[KEY_GAME_STATE] = next
         _pendingBall.value = queuedBalls.removeFirstOrNull()
+        if (next.phase == Phase.RESULT && currentState.phase != Phase.RESULT) {
+            viewModelScope.launch { _newHighScore.value = statsRepository.recordMatch(next) }
+        }
+    }
+
+    fun playSound(sfx: Sfx) = sound.play(sfx)
+
+    fun toggleSound() {
+        val enabled = !stats.value.soundEnabled
+        viewModelScope.launch { statsRepository.setSoundEnabled(enabled) }
     }
 
     /** Transition from the break into the second innings. */
@@ -171,11 +200,13 @@ class GameViewModel(
     private fun resetMatch() {
         queuedBalls.clear()
         _pendingBall.value = null
+        _newHighScore.value = false
         savedStateHandle[KEY_GAME_STATE] = null
     }
 
     override fun onCleared() {
         session.stop()
+        sound.release()
     }
 
     companion object {

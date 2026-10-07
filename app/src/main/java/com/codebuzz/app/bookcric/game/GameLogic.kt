@@ -38,6 +38,8 @@ data class MatchConfig(
 ) : Parcelable {
     fun isComputer(player: Player): Boolean = vsComputer && player == Player.TWO
 
+    fun nameOf(player: Player): String = if (player == Player.ONE) playerOneName else playerTwoName
+
     val isOnline: Boolean get() = localPlayer != null
 
     /** True when [player] is flipping on another device in an online match. */
@@ -53,14 +55,15 @@ data class MatchConfig(
 @Parcelize
 data class BallResult(val page: Int, val runs: Int, val isOut: Boolean) : Parcelable
 
-/** State of a single innings. */
+/** State of a single innings. [balls] is every ball faced so far, oldest first. */
 @Serializable
 @Parcelize
 data class InningsState(
     val batter: Player,
     val runs: Int = 0,
     val ballsBowled: Int = 0,
-    val isOut: Boolean = false
+    val isOut: Boolean = false,
+    val balls: List<BallResult> = emptyList()
 ) : Parcelable
 
 /** Whole-match state. Immutable — each ball returns a new copy. */
@@ -142,7 +145,8 @@ object GameLogic {
                 val updated = state.innings1.copy(
                     runs = state.innings1.runs + ball.runs,
                     ballsBowled = state.innings1.ballsBowled + 1,
-                    isOut = ball.isOut
+                    isOut = ball.isOut,
+                    balls = state.innings1.balls + ball
                 )
                 val ended = inningsEnded(updated, state.config.oversLimit)
                 state.copy(
@@ -156,7 +160,8 @@ object GameLogic {
                 val updated = state.innings2.copy(
                     runs = state.innings2.runs + ball.runs,
                     ballsBowled = state.innings2.ballsBowled + 1,
-                    isOut = ball.isOut
+                    isOut = ball.isOut,
+                    balls = state.innings2.balls + ball
                 )
                 val target = state.target ?: (state.innings1.runs + 1)
                 val chased = updated.runs >= target
@@ -184,6 +189,41 @@ object GameLogic {
         Phase.INNINGS_1 -> state.innings1.batter
         Phase.INNINGS_2 -> state.innings2.batter
         else -> null
+    }
+
+    /** The innings being batted, or null outside an innings. */
+    fun currentInnings(state: GameState): InningsState? = when (state.phase) {
+        Phase.INNINGS_1 -> state.innings1
+        Phase.INNINGS_2 -> state.innings2
+        else -> null
+    }
+
+    /**
+     * Balls of the over in progress. A just-completed over stays up, all six balls, until the
+     * first ball of the next one replaces it.
+     */
+    fun currentOver(innings: InningsState): List<BallResult> {
+        val faced = innings.balls.size
+        if (faced == 0) return emptyList()
+        return innings.balls.subList((faced - 1) / 6 * 6, faced)
+    }
+
+    /** Runs per over so far, or null before the first ball. */
+    fun runRate(innings: InningsState): Float? =
+        if (innings.ballsBowled == 0) null else innings.runs * 6f / innings.ballsBowled
+
+    /** Balls left in the current innings, or null when there is no overs cap (or no innings). */
+    fun ballsRemaining(state: GameState): Int? {
+        val innings = currentInnings(state) ?: return null
+        val limit = state.config.oversLimit ?: return null
+        return (limit * 6 - innings.ballsBowled).coerceAtLeast(0)
+    }
+
+    /** Runs the chaser still needs to win, or null outside the chase. */
+    fun runsNeeded(state: GameState): Int? {
+        if (state.phase != Phase.INNINGS_2) return null
+        val target = state.target ?: (state.innings1.runs + 1)
+        return (target - state.innings2.runs).coerceAtLeast(0)
     }
 
     /** Move from the innings break into the chase. */

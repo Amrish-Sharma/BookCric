@@ -15,6 +15,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -71,7 +72,7 @@ fun OnlineLobbyScreen(
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
         Text(
-            text = "Play Online",
+            text = "PLAY ONLINE",
             style = MaterialTheme.typography.headlineMedium,
             color = MaterialTheme.colorScheme.primary
         )
@@ -262,6 +263,8 @@ private fun HostList(
                         .clickable { onConnect(host) }
                 ) {
                     ListItem(
+                        // Let the card show through rather than the darker page surface.
+                        colors = ListItemDefaults.colors(containerColor = Color.Transparent),
                         headlineContent = { Text(host.name, fontWeight = FontWeight.Bold) },
                         supportingContent = { Text("Tap to join") },
                         leadingContent = { Icon(Icons.Filled.PhoneAndroid, contentDescription = null) }
